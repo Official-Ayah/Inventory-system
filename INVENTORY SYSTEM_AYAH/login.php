@@ -1,19 +1,48 @@
 <?php
-session_start();
+session_start([
+    'cookie_httponly' => true,
+    'cookie_secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'cookie_samesite' => 'Lax',
+]);
+
 include 'db_connect.php';
 
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if (isset($_POST['login'])) {
-    $username = $_POST['username'];
-    $password = $_POST['password'];
+    $csrf = (string)($_POST['csrf_token'] ?? '');
+    if ($csrf !== '' && !hash_equals($_SESSION['csrf_token'], $csrf)) {
+        http_response_code(400);
+        exit('Invalid request.');
+    }
 
-    $query = mysqli_query($conn, "SELECT * FROM users WHERE username='$username'");
-    $user = mysqli_fetch_assoc($query);
+    $username = trim((string)($_POST['username'] ?? ''));
+    $password = (string)($_POST['password'] ?? '');
 
-    if ($user && password_verify($password, $user['password'])) {
-        $_SESSION['user'] = $user;
-        header('Location: dashboard.php');
+    if ($username === '' || $password === '') {
+        echo "<script>alert('Username and password are required');</script>";
     } else {
-        echo "<script>alert('Invalid credentials');</script>";
+        $stmt = mysqli_prepare($conn, 'SELECT user_id, username, password FROM users WHERE username = ? LIMIT 1');
+        mysqli_stmt_bind_param($stmt, 's', $username);
+        mysqli_stmt_execute($stmt);
+        $result = mysqli_stmt_get_result($stmt);
+        $user = $result ? mysqli_fetch_assoc($result) : null;
+        mysqli_stmt_close($stmt);
+
+        if ($user && password_verify($password, $user['password'])) {
+            session_regenerate_id(true);
+            $_SESSION['user'] = [
+                'user_id' => $user['user_id'],
+                'username' => $user['username'],
+            ];
+            header('Location: dashboard.php');
+            exit;
+        } else {
+            echo "<script>alert('Invalid credentials');</script>";
+        }
     }
 }
 ?>
