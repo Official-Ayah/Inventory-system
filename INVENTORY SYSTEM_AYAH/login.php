@@ -7,7 +7,18 @@ session_start([
 
 include 'db_connect.php';
 
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if (isset($_POST['login'])) {
+    $csrf = (string)($_POST['csrf_token'] ?? '');
+    if ($csrf !== '' && !hash_equals($_SESSION['csrf_token'], $csrf)) {
+        http_response_code(400);
+        exit('Invalid request.');
+    }
+
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
 
